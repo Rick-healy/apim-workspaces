@@ -1,5 +1,29 @@
 # Azure API Management Workspace with VNet-Injected Gateway
 
+## ⚠️ **COST WARNING - READ BEFORE DEPLOYMENT** ⚠️
+
+> **🚨 HIGH COST INFRASTRUCTURE 🚨**
+> 
+> **This solution deploys PREMIUM Azure resources that incur SIGNIFICANT costs:**
+> - Azure API Management Premium V2 tier (~$3,000-4,000+ per month)
+> - Application Gateway with WAF (~$300+ per month)
+> - Workspace Gateway Premium instances (~$1,000+ per month each)
+> - Virtual Network and associated networking costs
+>
+> **💰 ESTIMATED MONTHLY COST: $4,500-6,000+ USD**
+>
+> **This infrastructure should ONLY be used for:**
+> - ✅ Short-term testing and exploration
+> - ✅ Proof of concept development
+> - ✅ Learning Azure APIM workspace architecture
+>
+> **❌ NOT recommended for:**
+> - Long-term development environments
+> - Production workloads without proper cost analysis
+> - Unattended deployments
+>
+> **🔥 ALWAYS CLEAN UP**: Use `./undeploy.sh` to remove all resources when finished to avoid unexpected charges!
+
 A complete Infrastructure as Code (IaC) solution for deploying Azure API Management with workspace isolation using VNet-injected gateways.
 
 ## 🏗️ Architecture Overview
