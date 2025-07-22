@@ -1,0 +1,316 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.36.1.42791",
+      "templateHash": "421762053983496310"
+    }
+  },
+  "parameters": {
+    "location": {
+      "type": "string",
+      "metadata": {
+        "description": "The Azure region to deploy to"
+      }
+    },
+    "vnetName": {
+      "type": "string",
+      "metadata": {
+        "description": "Virtual Network name"
+      }
+    },
+    "vnetAddressPrefix": {
+      "type": "string",
+      "defaultValue": "10.0.0.0/16",
+      "metadata": {
+        "description": "Virtual Network address prefix"
+      }
+    },
+    "workspaceCount": {
+      "type": "int",
+      "metadata": {
+        "description": "Number of workspace subnets to create"
+      }
+    },
+    "resourceToken": {
+      "type": "string",
+      "metadata": {
+        "description": "Resource name token for uniqueness"
+      }
+    }
+  },
+  "variables": {
+    "apimSubnetName": "snet-apim",
+    "appGwSubnetName": "snet-appgw",
+    "apimNsgName": "nsg-apim",
+    "appGwNsgName": "nsg-appgw",
+    "workspaceNsgBaseName": "nsg-workspace",
+    "subnetPrefixes": [
+      "10.0.0.0/27",
+      "10.0.0.32/27",
+      "10.0.0.64/27",
+      "10.0.0.96/27",
+      "10.0.0.128/27"
+    ]
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Network/networkSecurityGroups",
+      "apiVersion": "2022-07-01",
+      "name": "[format('{0}-{1}', variables('apimNsgName'), parameters('resourceToken'))]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "securityRules": [
+          {
+            "name": "Management_Endpoint",
+            "properties": {
+              "priority": 100,
+              "protocol": "Tcp",
+              "access": "Allow",
+              "direction": "Inbound",
+              "sourceAddressPrefix": "ApiManagement",
+              "sourcePortRange": "*",
+              "destinationAddressPrefix": "VirtualNetwork",
+              "destinationPortRange": "3443",
+              "description": "Required for API Management control plane access"
+            }
+          },
+          {
+            "name": "Allow_AppGW_to_APIM",
+            "properties": {
+              "priority": 110,
+              "protocol": "Tcp",
+              "access": "Allow",
+              "direction": "Inbound",
+              "sourceAddressPrefix": "10.0.0.32/27",
+              "sourcePortRange": "*",
+              "destinationAddressPrefix": "*",
+              "destinationPortRange": "443",
+              "description": "Allow Application Gateway to access APIM"
+            }
+          },
+          {
+            "name": "Allow_LoadBalancer",
+            "properties": {
+              "priority": 120,
+              "protocol": "*",
+              "access": "Allow",
+              "direction": "Inbound",
+              "sourceAddressPrefix": "AzureLoadBalancer",
+              "sourcePortRange": "*",
+              "destinationAddressPrefix": "*",
+              "destinationPortRange": "*",
+              "description": "Allow Azure Load Balancer"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "Microsoft.Network/networkSecurityGroups",
+      "apiVersion": "2022-07-01",
+      "name": "[format('{0}-{1}', variables('appGwNsgName'), parameters('resourceToken'))]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "securityRules": [
+          {
+            "name": "Allow_Internet_HTTP",
+            "properties": {
+              "priority": 100,
+              "protocol": "Tcp",
+              "access": "Allow",
+              "direction": "Inbound",
+              "sourceAddressPrefix": "*",
+              "sourcePortRange": "*",
+              "destinationAddressPrefix": "*",
+              "destinationPortRange": "80",
+              "description": "Allow HTTP from Internet"
+            }
+          },
+          {
+            "name": "Allow_Internet_HTTPS",
+            "properties": {
+              "priority": 110,
+              "protocol": "Tcp",
+              "access": "Allow",
+              "direction": "Inbound",
+              "sourceAddressPrefix": "*",
+              "sourcePortRange": "*",
+              "destinationAddressPrefix": "*",
+              "destinationPortRange": "443",
+              "description": "Allow HTTPS from Internet"
+            }
+          },
+          {
+            "name": "Allow_GatewayManager",
+            "properties": {
+              "priority": 120,
+              "protocol": "Tcp",
+              "access": "Allow",
+              "direction": "Inbound",
+              "sourceAddressPrefix": "GatewayManager",
+              "sourcePortRange": "*",
+              "destinationAddressPrefix": "*",
+              "destinationPortRange": "65200-65535",
+              "description": "Required for Application Gateway management"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "copy": {
+        "name": "workspaceNsg",
+        "count": "[length(range(0, parameters('workspaceCount')))]"
+      },
+      "type": "Microsoft.Network/networkSecurityGroups",
+      "apiVersion": "2022-07-01",
+      "name": "[format('{0}-{1}-{2}', variables('workspaceNsgBaseName'), add(range(0, parameters('workspaceCount'))[copyIndex()], 1), parameters('resourceToken'))]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "securityRules": [
+          {
+            "name": "Allow_Gateway_Manager",
+            "properties": {
+              "priority": 100,
+              "protocol": "Tcp",
+              "access": "Allow",
+              "direction": "Inbound",
+              "sourceAddressPrefix": "GatewayManager",
+              "sourcePortRange": "*",
+              "destinationAddressPrefix": "*",
+              "destinationPortRange": "443",
+              "description": "Required for Gateway Manager access"
+            }
+          },
+          {
+            "name": "Allow_APIM_Access",
+            "properties": {
+              "priority": 110,
+              "protocol": "Tcp",
+              "access": "Allow",
+              "direction": "Inbound",
+              "sourceAddressPrefix": "ApiManagement",
+              "sourcePortRange": "*",
+              "destinationAddressPrefix": "VirtualNetwork",
+              "destinationPortRange": "443",
+              "description": "Allow APIM to access Gateway"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "Microsoft.Network/virtualNetworks",
+      "apiVersion": "2022-07-01",
+      "name": "[format('{0}-{1}', parameters('vnetName'), parameters('resourceToken'))]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "addressSpace": {
+          "addressPrefixes": [
+            "[parameters('vnetAddressPrefix')]"
+          ]
+        },
+        "subnets": [
+          {
+            "name": "[variables('apimSubnetName')]",
+            "properties": {
+              "addressPrefix": "[variables('subnetPrefixes')[0]]",
+              "privateEndpointNetworkPolicies": "Enabled",
+              "privateLinkServiceNetworkPolicies": "Enabled",
+              "networkSecurityGroup": {
+                "id": "[resourceId('Microsoft.Network/networkSecurityGroups', format('{0}-{1}', variables('apimNsgName'), parameters('resourceToken')))]"
+              }
+            }
+          },
+          {
+            "name": "[variables('appGwSubnetName')]",
+            "properties": {
+              "addressPrefix": "[variables('subnetPrefixes')[1]]",
+              "privateEndpointNetworkPolicies": "Enabled",
+              "privateLinkServiceNetworkPolicies": "Enabled",
+              "networkSecurityGroup": {
+                "id": "[resourceId('Microsoft.Network/networkSecurityGroups', format('{0}-{1}', variables('appGwNsgName'), parameters('resourceToken')))]"
+              }
+            }
+          },
+          {
+            "name": "snet-workspace-1",
+            "properties": {
+              "addressPrefix": "[variables('subnetPrefixes')[2]]",
+              "privateEndpointNetworkPolicies": "Enabled",
+              "privateLinkServiceNetworkPolicies": "Enabled",
+              "networkSecurityGroup": {
+                "id": "[resourceId('Microsoft.Network/networkSecurityGroups', format('{0}-{1}-{2}', variables('workspaceNsgBaseName'), add(range(0, parameters('workspaceCount'))[0], 1), parameters('resourceToken')))]"
+              },
+              "delegations": [
+                {
+                  "name": "delegation-to-apim-workspace",
+                  "properties": {
+                    "serviceName": "Microsoft.Web/hostingEnvironments"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "name": "snet-workspace-2",
+            "properties": {
+              "addressPrefix": "[variables('subnetPrefixes')[3]]",
+              "privateEndpointNetworkPolicies": "Enabled",
+              "privateLinkServiceNetworkPolicies": "Enabled",
+              "networkSecurityGroup": {
+                "id": "[resourceId('Microsoft.Network/networkSecurityGroups', format('{0}-{1}-{2}', variables('workspaceNsgBaseName'), add(range(0, parameters('workspaceCount'))[1], 1), parameters('resourceToken')))]"
+              }
+            }
+          },
+          {
+            "name": "snet-workspace-3",
+            "properties": {
+              "addressPrefix": "[variables('subnetPrefixes')[4]]",
+              "privateEndpointNetworkPolicies": "Enabled",
+              "privateLinkServiceNetworkPolicies": "Enabled",
+              "networkSecurityGroup": {
+                "id": "[resourceId('Microsoft.Network/networkSecurityGroups', format('{0}-{1}-{2}', variables('workspaceNsgBaseName'), add(range(0, parameters('workspaceCount'))[2], 1), parameters('resourceToken')))]"
+              }
+            }
+          }
+        ]
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Network/networkSecurityGroups', format('{0}-{1}', variables('apimNsgName'), parameters('resourceToken')))]",
+        "[resourceId('Microsoft.Network/networkSecurityGroups', format('{0}-{1}', variables('appGwNsgName'), parameters('resourceToken')))]",
+        "[resourceId('Microsoft.Network/networkSecurityGroups', format('{0}-{1}-{2}', variables('workspaceNsgBaseName'), add(range(0, parameters('workspaceCount'))[2], 1), parameters('resourceToken')))]",
+        "[resourceId('Microsoft.Network/networkSecurityGroups', format('{0}-{1}-{2}', variables('workspaceNsgBaseName'), add(range(0, parameters('workspaceCount'))[1], 1), parameters('resourceToken')))]",
+        "[resourceId('Microsoft.Network/networkSecurityGroups', format('{0}-{1}-{2}', variables('workspaceNsgBaseName'), add(range(0, parameters('workspaceCount'))[0], 1), parameters('resourceToken')))]"
+      ]
+    }
+  ],
+  "outputs": {
+    "vnetName": {
+      "type": "string",
+      "value": "[format('{0}-{1}', parameters('vnetName'), parameters('resourceToken'))]"
+    },
+    "vnetId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.Network/virtualNetworks', format('{0}-{1}', parameters('vnetName'), parameters('resourceToken')))]"
+    },
+    "apimSubnetId": {
+      "type": "string",
+      "value": "[format('{0}/subnets/{1}', resourceId('Microsoft.Network/virtualNetworks', format('{0}-{1}', parameters('vnetName'), parameters('resourceToken'))), variables('apimSubnetName'))]"
+    },
+    "appGwSubnetId": {
+      "type": "string",
+      "value": "[format('{0}/subnets/{1}', resourceId('Microsoft.Network/virtualNetworks', format('{0}-{1}', parameters('vnetName'), parameters('resourceToken'))), variables('appGwSubnetName'))]"
+    },
+    "workspaceSubnetIds": {
+      "type": "array",
+      "copy": {
+        "count": "[length(range(0, parameters('workspaceCount')))]",
+        "input": "[format('{0}/subnets/snet-workspace-{1}', resourceId('Microsoft.Network/virtualNetworks', format('{0}-{1}', parameters('vnetName'), parameters('resourceToken'))), add(range(0, parameters('workspaceCount'))[copyIndex()], 1))]"
+      }
+    }
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "location": {
+      "value": "uksouth"
+    },
+    "apimServiceName": {
+      "value": "apim-testcorp"
+    },
+    "publisherEmail": {
+      "value": "admin@contoso.com"
+    },
+    "publisherName": {
+      "value": "Contoso API Management"
+    },
+    "vnetName": {
+      "value": "vnet-apim"
+    },
+    "vnetAddressPrefix": {
+      "value": "10.0.0.0/16"
+    },
+    "appGwName": {
+      "value": "appgw-apim"
+    },
+    "workspaceCount": {
+      "value": 3
+    }
+  }
+}

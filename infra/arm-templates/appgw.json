@@ -1,0 +1,214 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.36.1.42791",
+      "templateHash": "15966981418723351380"
+    }
+  },
+  "parameters": {
+    "location": {
+      "type": "string",
+      "metadata": {
+        "description": "The Azure region to deploy to"
+      }
+    },
+    "appGwName": {
+      "type": "string",
+      "metadata": {
+        "description": "Application Gateway name"
+      }
+    },
+    "resourceToken": {
+      "type": "string",
+      "metadata": {
+        "description": "Resource name token for uniqueness"
+      }
+    },
+    "appGwSubnetId": {
+      "type": "string",
+      "metadata": {
+        "description": "Subnet ID for the Application Gateway"
+      }
+    },
+    "apimGatewayUrl": {
+      "type": "string",
+      "defaultValue": "apim-internal.example.com",
+      "metadata": {
+        "description": "Internal API Management gateway URL (will be determined after APIM deployment)"
+      }
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Network/publicIPAddresses",
+      "apiVersion": "2022-07-01",
+      "name": "[format('{0}-pip-{1}', parameters('appGwName'), parameters('resourceToken'))]",
+      "location": "[parameters('location')]",
+      "sku": {
+        "name": "Standard",
+        "tier": "Regional"
+      },
+      "properties": {
+        "publicIPAllocationMethod": "Static",
+        "dnsSettings": {
+          "domainNameLabel": "[format('{0}-{1}', parameters('appGwName'), parameters('resourceToken'))]"
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Network/applicationGateways",
+      "apiVersion": "2022-07-01",
+      "name": "[format('{0}-{1}', parameters('appGwName'), parameters('resourceToken'))]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "sku": {
+          "name": "WAF_v2",
+          "tier": "WAF_v2",
+          "capacity": 1
+        },
+        "gatewayIPConfigurations": [
+          {
+            "name": "appGwIpConfig",
+            "properties": {
+              "subnet": {
+                "id": "[parameters('appGwSubnetId')]"
+              }
+            }
+          }
+        ],
+        "frontendIPConfigurations": [
+          {
+            "name": "appGwFrontendIP",
+            "properties": {
+              "publicIPAddress": {
+                "id": "[resourceId('Microsoft.Network/publicIPAddresses', format('{0}-pip-{1}', parameters('appGwName'), parameters('resourceToken')))]"
+              }
+            }
+          }
+        ],
+        "frontendPorts": [
+          {
+            "name": "port80",
+            "properties": {
+              "port": 80
+            }
+          },
+          {
+            "name": "port443",
+            "properties": {
+              "port": 443
+            }
+          }
+        ],
+        "backendAddressPools": [
+          {
+            "name": "apimBackendPool",
+            "properties": {
+              "backendAddresses": [
+                {
+                  "fqdn": "[parameters('apimGatewayUrl')]"
+                }
+              ]
+            }
+          }
+        ],
+        "backendHttpSettingsCollection": [
+          {
+            "name": "apimHttpSettings",
+            "properties": {
+              "port": 443,
+              "protocol": "Https",
+              "cookieBasedAffinity": "Disabled",
+              "pickHostNameFromBackendAddress": true,
+              "requestTimeout": 30,
+              "probe": {
+                "id": "[resourceId('Microsoft.Network/applicationGateways/probes', format('{0}-{1}', parameters('appGwName'), parameters('resourceToken')), 'apimHealthProbe')]"
+              }
+            }
+          }
+        ],
+        "httpListeners": [
+          {
+            "name": "appGwHttpListener",
+            "properties": {
+              "frontendIPConfiguration": {
+                "id": "[resourceId('Microsoft.Network/applicationGateways/frontendIPConfigurations', format('{0}-{1}', parameters('appGwName'), parameters('resourceToken')), 'appGwFrontendIP')]"
+              },
+              "frontendPort": {
+                "id": "[resourceId('Microsoft.Network/applicationGateways/frontendPorts', format('{0}-{1}', parameters('appGwName'), parameters('resourceToken')), 'port80')]"
+              },
+              "protocol": "Http"
+            }
+          }
+        ],
+        "requestRoutingRules": [
+          {
+            "name": "apimRoutingRule",
+            "properties": {
+              "ruleType": "Basic",
+              "priority": 100,
+              "httpListener": {
+                "id": "[resourceId('Microsoft.Network/applicationGateways/httpListeners', format('{0}-{1}', parameters('appGwName'), parameters('resourceToken')), 'appGwHttpListener')]"
+              },
+              "backendAddressPool": {
+                "id": "[resourceId('Microsoft.Network/applicationGateways/backendAddressPools', format('{0}-{1}', parameters('appGwName'), parameters('resourceToken')), 'apimBackendPool')]"
+              },
+              "backendHttpSettings": {
+                "id": "[resourceId('Microsoft.Network/applicationGateways/backendHttpSettingsCollection', format('{0}-{1}', parameters('appGwName'), parameters('resourceToken')), 'apimHttpSettings')]"
+              }
+            }
+          }
+        ],
+        "probes": [
+          {
+            "name": "apimHealthProbe",
+            "properties": {
+              "protocol": "Https",
+              "path": "/status-0123456789abcdef",
+              "interval": 30,
+              "timeout": 30,
+              "unhealthyThreshold": 3,
+              "pickHostNameFromBackendHttpSettings": true,
+              "minServers": 0,
+              "match": {
+                "statusCodes": [
+                  "200-399"
+                ]
+              }
+            }
+          }
+        ],
+        "webApplicationFirewallConfiguration": {
+          "enabled": true,
+          "firewallMode": "Prevention",
+          "ruleSetType": "OWASP",
+          "ruleSetVersion": "3.2"
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Network/publicIPAddresses', format('{0}-pip-{1}', parameters('appGwName'), parameters('resourceToken')))]"
+      ]
+    }
+  ],
+  "outputs": {
+    "appGwName": {
+      "type": "string",
+      "value": "[format('{0}-{1}', parameters('appGwName'), parameters('resourceToken'))]"
+    },
+    "appGwId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.Network/applicationGateways', format('{0}-{1}', parameters('appGwName'), parameters('resourceToken')))]"
+    },
+    "publicIpAddress": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Network/publicIPAddresses', format('{0}-pip-{1}', parameters('appGwName'), parameters('resourceToken'))), '2022-07-01').ipAddress]"
+    },
+    "publicFqdn": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Network/publicIPAddresses', format('{0}-pip-{1}', parameters('appGwName'), parameters('resourceToken'))), '2022-07-01').dnsSettings.fqdn]"
+    }
+  }
+}

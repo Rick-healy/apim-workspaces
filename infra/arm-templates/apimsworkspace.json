@@ -1,0 +1,130 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.36.1.42791",
+      "templateHash": "7480604300387324594"
+    }
+  },
+  "parameters": {
+    "apimServiceName": {
+      "type": "string",
+      "metadata": {
+        "description": "Name of the existing APIM service"
+      }
+    },
+    "workspaceName": {
+      "type": "string",
+      "metadata": {
+        "description": "Name of the workspace to create"
+      }
+    },
+    "workspaceDisplayName": {
+      "type": "string",
+      "metadata": {
+        "description": "Display name for the workspace"
+      }
+    },
+    "workspaceDescription": {
+      "type": "string",
+      "defaultValue": "APIM workspace with dedicated VNet-injected workspace gateway",
+      "metadata": {
+        "description": "Description of the workspace"
+      }
+    },
+    "gatewayName": {
+      "type": "string",
+      "metadata": {
+        "description": "Name of the workspace gateway"
+      }
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]",
+      "metadata": {
+        "description": "Location for the gateway resource"
+      }
+    },
+    "workspaceSubnetId": {
+      "type": "string",
+      "metadata": {
+        "description": "Subnet ID for VNet injection of the workspace gateway"
+      }
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.ApiManagement/service/workspaces",
+      "apiVersion": "2024-05-01",
+      "name": "[format('{0}/{1}', parameters('apimServiceName'), parameters('workspaceName'))]",
+      "properties": {
+        "displayName": "[parameters('workspaceDisplayName')]",
+        "description": "[parameters('workspaceDescription')]"
+      }
+    },
+    {
+      "type": "Microsoft.ApiManagement/gateways",
+      "apiVersion": "2024-06-01-preview",
+      "name": "[parameters('gatewayName')]",
+      "location": "[parameters('location')]",
+      "sku": {
+        "name": "WorkspaceGatewayPremium",
+        "capacity": 1
+      },
+      "properties": {
+        "virtualNetworkType": "Internal",
+        "backend": {
+          "subnet": {
+            "id": "[parameters('workspaceSubnetId')]"
+          }
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service/workspaces', parameters('apimServiceName'), parameters('workspaceName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.ApiManagement/gateways/configConnections",
+      "apiVersion": "2024-06-01-preview",
+      "name": "[format('{0}/{1}', parameters('gatewayName'), 'default')]",
+      "properties": {
+        "sourceId": "[resourceId('Microsoft.ApiManagement/service/workspaces', parameters('apimServiceName'), parameters('workspaceName'))]",
+        "hostnames": [
+          "[format('{0}.azure-api.net', parameters('apimServiceName'))]"
+        ]
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ApiManagement/service/workspaces', parameters('apimServiceName'), parameters('workspaceName'))]",
+        "[resourceId('Microsoft.ApiManagement/gateways', parameters('gatewayName'))]"
+      ]
+    }
+  ],
+  "outputs": {
+    "workspaceId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.ApiManagement/service/workspaces', parameters('apimServiceName'), parameters('workspaceName'))]"
+    },
+    "workspaceName": {
+      "type": "string",
+      "value": "[parameters('workspaceName')]"
+    },
+    "gatewayId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.ApiManagement/gateways', parameters('gatewayName'))]"
+    },
+    "gatewayName": {
+      "type": "string",
+      "value": "[parameters('gatewayName')]"
+    },
+    "configConnectionId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.ApiManagement/gateways/configConnections', parameters('gatewayName'), 'default')]"
+    },
+    "connectionInstructions": {
+      "type": "string",
+      "value": "[format('Configuration connection created automatically: workspace \"{0}\" connected to gateway \"{1}\"', parameters('workspaceName'), parameters('gatewayName'))]"
+    }
+  }
+}

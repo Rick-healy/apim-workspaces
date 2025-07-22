@@ -1,0 +1,983 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.36.1.42791",
+      "templateHash": "14430647168491602499"
+    }
+  },
+  "parameters": {
+    "location": {
+      "type": "string",
+      "defaultValue": "uksouth",
+      "metadata": {
+        "description": "The Azure region to deploy to"
+      }
+    },
+    "apimServiceName": {
+      "type": "string",
+      "defaultValue": "[format('apim-{0}', uniqueString(resourceGroup().id))]",
+      "metadata": {
+        "description": "The name of the API Management service"
+      }
+    },
+    "publisherEmail": {
+      "type": "string",
+      "defaultValue": "admin@contoso.com",
+      "metadata": {
+        "description": "Publisher email required for API Management creation"
+      }
+    },
+    "publisherName": {
+      "type": "string",
+      "defaultValue": "Contoso Admin",
+      "metadata": {
+        "description": "Publisher name required for API Management creation"
+      }
+    },
+    "vnetName": {
+      "type": "string",
+      "defaultValue": "vnet-apim",
+      "metadata": {
+        "description": "Virtual Network name"
+      }
+    },
+    "vnetAddressPrefix": {
+      "type": "string",
+      "defaultValue": "10.0.0.0/16",
+      "metadata": {
+        "description": "Virtual Network address prefix"
+      }
+    },
+    "appGwName": {
+      "type": "string",
+      "defaultValue": "appgw-apim",
+      "metadata": {
+        "description": "Application Gateway name"
+      }
+    },
+    "workspaceCount": {
+      "type": "int",
+      "defaultValue": 3,
+      "metadata": {
+        "description": "Number of workspace subnets to create (fixed at 3 for this deployment)"
+      }
+    }
+  },
+  "variables": {
+    "resourceToken": "[uniqueString(resourceGroup().id)]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2022-09-01",
+      "name": "vnet-deployment",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "vnetName": {
+            "value": "[parameters('vnetName')]"
+          },
+          "vnetAddressPrefix": {
+            "value": "[parameters('vnetAddressPrefix')]"
+          },
+          "workspaceCount": {
+            "value": "[parameters('workspaceCount')]"
+          },
+          "resourceToken": {
+            "value": "[variables('resourceToken')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.36.1.42791",
+              "templateHash": "9232120297003547169"
+            }
+          },
+          "parameters": {
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "The Azure region to deploy to"
+              }
+            },
+            "vnetName": {
+              "type": "string",
+              "metadata": {
+                "description": "Virtual Network name"
+              }
+            },
+            "vnetAddressPrefix": {
+              "type": "string",
+              "defaultValue": "10.0.0.0/16",
+              "metadata": {
+                "description": "Virtual Network address prefix"
+              }
+            },
+            "workspaceCount": {
+              "type": "int",
+              "metadata": {
+                "description": "Number of workspace subnets to create"
+              }
+            },
+            "resourceToken": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource name token for uniqueness"
+              }
+            }
+          },
+          "variables": {
+            "apimSubnetName": "snet-apim",
+            "appGwSubnetName": "snet-appgw",
+            "apimNsgName": "nsg-apim",
+            "appGwNsgName": "nsg-appgw",
+            "workspaceNsgBaseName": "nsg-workspace",
+            "subnetPrefixes": [
+              "10.0.0.0/27",
+              "10.0.0.32/27",
+              "10.0.0.64/27",
+              "10.0.0.96/27",
+              "10.0.0.128/27"
+            ]
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Network/networkSecurityGroups",
+              "apiVersion": "2022-07-01",
+              "name": "[format('{0}-{1}', variables('apimNsgName'), parameters('resourceToken'))]",
+              "location": "[parameters('location')]",
+              "properties": {
+                "securityRules": [
+                  {
+                    "name": "Management_Endpoint",
+                    "properties": {
+                      "priority": 100,
+                      "protocol": "Tcp",
+                      "access": "Allow",
+                      "direction": "Inbound",
+                      "sourceAddressPrefix": "ApiManagement",
+                      "sourcePortRange": "*",
+                      "destinationAddressPrefix": "VirtualNetwork",
+                      "destinationPortRange": "3443",
+                      "description": "Required for API Management control plane access"
+                    }
+                  },
+                  {
+                    "name": "Allow_AppGW_to_APIM",
+                    "properties": {
+                      "priority": 110,
+                      "protocol": "Tcp",
+                      "access": "Allow",
+                      "direction": "Inbound",
+                      "sourceAddressPrefix": "10.0.0.32/27",
+                      "sourcePortRange": "*",
+                      "destinationAddressPrefix": "*",
+                      "destinationPortRange": "443",
+                      "description": "Allow Application Gateway to access APIM"
+                    }
+                  },
+                  {
+                    "name": "Allow_LoadBalancer",
+                    "properties": {
+                      "priority": 120,
+                      "protocol": "*",
+                      "access": "Allow",
+                      "direction": "Inbound",
+                      "sourceAddressPrefix": "AzureLoadBalancer",
+                      "sourcePortRange": "*",
+                      "destinationAddressPrefix": "*",
+                      "destinationPortRange": "*",
+                      "description": "Allow Azure Load Balancer"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "type": "Microsoft.Network/networkSecurityGroups",
+              "apiVersion": "2022-07-01",
+              "name": "[format('{0}-{1}', variables('appGwNsgName'), parameters('resourceToken'))]",
+              "location": "[parameters('location')]",
+              "properties": {
+                "securityRules": [
+                  {
+                    "name": "Allow_Internet_HTTP",
+                    "properties": {
+                      "priority": 100,
+                      "protocol": "Tcp",
+                      "access": "Allow",
+                      "direction": "Inbound",
+                      "sourceAddressPrefix": "*",
+                      "sourcePortRange": "*",
+                      "destinationAddressPrefix": "*",
+                      "destinationPortRange": "80",
+                      "description": "Allow HTTP from Internet"
+                    }
+                  },
+                  {
+                    "name": "Allow_Internet_HTTPS",
+                    "properties": {
+                      "priority": 110,
+                      "protocol": "Tcp",
+                      "access": "Allow",
+                      "direction": "Inbound",
+                      "sourceAddressPrefix": "*",
+                      "sourcePortRange": "*",
+                      "destinationAddressPrefix": "*",
+                      "destinationPortRange": "443",
+                      "description": "Allow HTTPS from Internet"
+                    }
+                  },
+                  {
+                    "name": "Allow_GatewayManager",
+                    "properties": {
+                      "priority": 120,
+                      "protocol": "Tcp",
+                      "access": "Allow",
+                      "direction": "Inbound",
+                      "sourceAddressPrefix": "GatewayManager",
+                      "sourcePortRange": "*",
+                      "destinationAddressPrefix": "*",
+                      "destinationPortRange": "65200-65535",
+                      "description": "Required for Application Gateway management"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "copy": {
+                "name": "workspaceNsg",
+                "count": "[length(range(0, parameters('workspaceCount')))]"
+              },
+              "type": "Microsoft.Network/networkSecurityGroups",
+              "apiVersion": "2022-07-01",
+              "name": "[format('{0}-{1}-{2}', variables('workspaceNsgBaseName'), add(range(0, parameters('workspaceCount'))[copyIndex()], 1), parameters('resourceToken'))]",
+              "location": "[parameters('location')]",
+              "properties": {
+                "securityRules": [
+                  {
+                    "name": "Allow_Gateway_Manager",
+                    "properties": {
+                      "priority": 100,
+                      "protocol": "Tcp",
+                      "access": "Allow",
+                      "direction": "Inbound",
+                      "sourceAddressPrefix": "GatewayManager",
+                      "sourcePortRange": "*",
+                      "destinationAddressPrefix": "*",
+                      "destinationPortRange": "443",
+                      "description": "Required for Gateway Manager access"
+                    }
+                  },
+                  {
+                    "name": "Allow_APIM_Access",
+                    "properties": {
+                      "priority": 110,
+                      "protocol": "Tcp",
+                      "access": "Allow",
+                      "direction": "Inbound",
+                      "sourceAddressPrefix": "ApiManagement",
+                      "sourcePortRange": "*",
+                      "destinationAddressPrefix": "VirtualNetwork",
+                      "destinationPortRange": "443",
+                      "description": "Allow APIM to access Gateway"
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "type": "Microsoft.Network/virtualNetworks",
+              "apiVersion": "2022-07-01",
+              "name": "[format('{0}-{1}', parameters('vnetName'), parameters('resourceToken'))]",
+              "location": "[parameters('location')]",
+              "properties": {
+                "addressSpace": {
+                  "addressPrefixes": [
+                    "[parameters('vnetAddressPrefix')]"
+                  ]
+                },
+                "subnets": [
+                  {
+                    "name": "[variables('apimSubnetName')]",
+                    "properties": {
+                      "addressPrefix": "[variables('subnetPrefixes')[0]]",
+                      "privateEndpointNetworkPolicies": "Enabled",
+                      "privateLinkServiceNetworkPolicies": "Enabled",
+                      "networkSecurityGroup": {
+                        "id": "[resourceId('Microsoft.Network/networkSecurityGroups', format('{0}-{1}', variables('apimNsgName'), parameters('resourceToken')))]"
+                      }
+                    }
+                  },
+                  {
+                    "name": "[variables('appGwSubnetName')]",
+                    "properties": {
+                      "addressPrefix": "[variables('subnetPrefixes')[1]]",
+                      "privateEndpointNetworkPolicies": "Enabled",
+                      "privateLinkServiceNetworkPolicies": "Enabled",
+                      "networkSecurityGroup": {
+                        "id": "[resourceId('Microsoft.Network/networkSecurityGroups', format('{0}-{1}', variables('appGwNsgName'), parameters('resourceToken')))]"
+                      }
+                    }
+                  },
+                  {
+                    "name": "snet-workspace-1",
+                    "properties": {
+                      "addressPrefix": "[variables('subnetPrefixes')[2]]",
+                      "privateEndpointNetworkPolicies": "Enabled",
+                      "privateLinkServiceNetworkPolicies": "Enabled",
+                      "networkSecurityGroup": {
+                        "id": "[resourceId('Microsoft.Network/networkSecurityGroups', format('{0}-{1}-{2}', variables('workspaceNsgBaseName'), add(range(0, parameters('workspaceCount'))[0], 1), parameters('resourceToken')))]"
+                      },
+                      "delegations": [
+                        {
+                          "name": "delegation-to-apim-workspace",
+                          "properties": {
+                            "serviceName": "Microsoft.Web/hostingEnvironments"
+                          }
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "name": "snet-workspace-2",
+                    "properties": {
+                      "addressPrefix": "[variables('subnetPrefixes')[3]]",
+                      "privateEndpointNetworkPolicies": "Enabled",
+                      "privateLinkServiceNetworkPolicies": "Enabled",
+                      "networkSecurityGroup": {
+                        "id": "[resourceId('Microsoft.Network/networkSecurityGroups', format('{0}-{1}-{2}', variables('workspaceNsgBaseName'), add(range(0, parameters('workspaceCount'))[1], 1), parameters('resourceToken')))]"
+                      }
+                    }
+                  },
+                  {
+                    "name": "snet-workspace-3",
+                    "properties": {
+                      "addressPrefix": "[variables('subnetPrefixes')[4]]",
+                      "privateEndpointNetworkPolicies": "Enabled",
+                      "privateLinkServiceNetworkPolicies": "Enabled",
+                      "networkSecurityGroup": {
+                        "id": "[resourceId('Microsoft.Network/networkSecurityGroups', format('{0}-{1}-{2}', variables('workspaceNsgBaseName'), add(range(0, parameters('workspaceCount'))[2], 1), parameters('resourceToken')))]"
+                      }
+                    }
+                  }
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/networkSecurityGroups', format('{0}-{1}', variables('apimNsgName'), parameters('resourceToken')))]",
+                "[resourceId('Microsoft.Network/networkSecurityGroups', format('{0}-{1}', variables('appGwNsgName'), parameters('resourceToken')))]",
+                "[resourceId('Microsoft.Network/networkSecurityGroups', format('{0}-{1}-{2}', variables('workspaceNsgBaseName'), add(range(0, parameters('workspaceCount'))[2], 1), parameters('resourceToken')))]",
+                "[resourceId('Microsoft.Network/networkSecurityGroups', format('{0}-{1}-{2}', variables('workspaceNsgBaseName'), add(range(0, parameters('workspaceCount'))[0], 1), parameters('resourceToken')))]",
+                "[resourceId('Microsoft.Network/networkSecurityGroups', format('{0}-{1}-{2}', variables('workspaceNsgBaseName'), add(range(0, parameters('workspaceCount'))[1], 1), parameters('resourceToken')))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "vnetName": {
+              "type": "string",
+              "value": "[format('{0}-{1}', parameters('vnetName'), parameters('resourceToken'))]"
+            },
+            "vnetId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Network/virtualNetworks', format('{0}-{1}', parameters('vnetName'), parameters('resourceToken')))]"
+            },
+            "apimSubnetId": {
+              "type": "string",
+              "value": "[format('{0}/subnets/{1}', resourceId('Microsoft.Network/virtualNetworks', format('{0}-{1}', parameters('vnetName'), parameters('resourceToken'))), variables('apimSubnetName'))]"
+            },
+            "appGwSubnetId": {
+              "type": "string",
+              "value": "[format('{0}/subnets/{1}', resourceId('Microsoft.Network/virtualNetworks', format('{0}-{1}', parameters('vnetName'), parameters('resourceToken'))), variables('appGwSubnetName'))]"
+            },
+            "workspaceSubnetIds": {
+              "type": "array",
+              "copy": {
+                "count": "[length(range(0, parameters('workspaceCount')))]",
+                "input": "[format('{0}/subnets/snet-workspace-{1}', resourceId('Microsoft.Network/virtualNetworks', format('{0}-{1}', parameters('vnetName'), parameters('resourceToken'))), add(range(0, parameters('workspaceCount'))[copyIndex()], 1))]"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2022-09-01",
+      "name": "apim-deployment",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "apimServiceName": {
+            "value": "[parameters('apimServiceName')]"
+          },
+          "publisherEmail": {
+            "value": "[parameters('publisherEmail')]"
+          },
+          "publisherName": {
+            "value": "[parameters('publisherName')]"
+          },
+          "apimSubnetId": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'vnet-deployment'), '2022-09-01').outputs.apimSubnetId.value]"
+          },
+          "resourceToken": {
+            "value": "[variables('resourceToken')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.36.1.42791",
+              "templateHash": "9251939984148696275"
+            }
+          },
+          "parameters": {
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "The Azure region to deploy to"
+              }
+            },
+            "apimServiceName": {
+              "type": "string",
+              "metadata": {
+                "description": "API Management service name"
+              }
+            },
+            "publisherEmail": {
+              "type": "string",
+              "metadata": {
+                "description": "Publisher email for API Management"
+              }
+            },
+            "publisherName": {
+              "type": "string",
+              "metadata": {
+                "description": "Publisher name for API Management"
+              }
+            },
+            "resourceToken": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource name token for uniqueness"
+              }
+            },
+            "apimSubnetId": {
+              "type": "string",
+              "metadata": {
+                "description": "Subnet ID for the API Management service"
+              }
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.ApiManagement/service",
+              "apiVersion": "2022-08-01",
+              "name": "[format('{0}-{1}', parameters('apimServiceName'), parameters('resourceToken'))]",
+              "location": "[parameters('location')]",
+              "sku": {
+                "name": "Premium",
+                "capacity": 1
+              },
+              "properties": {
+                "publisherEmail": "[parameters('publisherEmail')]",
+                "publisherName": "[parameters('publisherName')]",
+                "virtualNetworkType": "Internal",
+                "virtualNetworkConfiguration": {
+                  "subnetResourceId": "[parameters('apimSubnetId')]"
+                }
+              },
+              "tags": {
+                "environment": "production",
+                "purpose": "api-management"
+              }
+            }
+          ],
+          "outputs": {
+            "apimName": {
+              "type": "string",
+              "value": "[format('{0}-{1}', parameters('apimServiceName'), parameters('resourceToken'))]"
+            },
+            "apimId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.ApiManagement/service', format('{0}-{1}', parameters('apimServiceName'), parameters('resourceToken')))]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Resources/deployments', 'vnet-deployment')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2022-09-01",
+      "name": "appgw-deployment",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "appGwName": {
+            "value": "[parameters('appGwName')]"
+          },
+          "appGwSubnetId": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'vnet-deployment'), '2022-09-01').outputs.appGwSubnetId.value]"
+          },
+          "resourceToken": {
+            "value": "[variables('resourceToken')]"
+          },
+          "apimGatewayUrl": {
+            "value": "[format('{0}.azure-api.net', reference(resourceId('Microsoft.Resources/deployments', 'apim-deployment'), '2022-09-01').outputs.apimName.value)]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.36.1.42791",
+              "templateHash": "15966981418723351380"
+            }
+          },
+          "parameters": {
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "The Azure region to deploy to"
+              }
+            },
+            "appGwName": {
+              "type": "string",
+              "metadata": {
+                "description": "Application Gateway name"
+              }
+            },
+            "resourceToken": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource name token for uniqueness"
+              }
+            },
+            "appGwSubnetId": {
+              "type": "string",
+              "metadata": {
+                "description": "Subnet ID for the Application Gateway"
+              }
+            },
+            "apimGatewayUrl": {
+              "type": "string",
+              "defaultValue": "apim-internal.example.com",
+              "metadata": {
+                "description": "Internal API Management gateway URL (will be determined after APIM deployment)"
+              }
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Network/publicIPAddresses",
+              "apiVersion": "2022-07-01",
+              "name": "[format('{0}-pip-{1}', parameters('appGwName'), parameters('resourceToken'))]",
+              "location": "[parameters('location')]",
+              "sku": {
+                "name": "Standard",
+                "tier": "Regional"
+              },
+              "properties": {
+                "publicIPAllocationMethod": "Static",
+                "dnsSettings": {
+                  "domainNameLabel": "[format('{0}-{1}', parameters('appGwName'), parameters('resourceToken'))]"
+                }
+              }
+            },
+            {
+              "type": "Microsoft.Network/applicationGateways",
+              "apiVersion": "2022-07-01",
+              "name": "[format('{0}-{1}', parameters('appGwName'), parameters('resourceToken'))]",
+              "location": "[parameters('location')]",
+              "properties": {
+                "sku": {
+                  "name": "WAF_v2",
+                  "tier": "WAF_v2",
+                  "capacity": 1
+                },
+                "gatewayIPConfigurations": [
+                  {
+                    "name": "appGwIpConfig",
+                    "properties": {
+                      "subnet": {
+                        "id": "[parameters('appGwSubnetId')]"
+                      }
+                    }
+                  }
+                ],
+                "frontendIPConfigurations": [
+                  {
+                    "name": "appGwFrontendIP",
+                    "properties": {
+                      "publicIPAddress": {
+                        "id": "[resourceId('Microsoft.Network/publicIPAddresses', format('{0}-pip-{1}', parameters('appGwName'), parameters('resourceToken')))]"
+                      }
+                    }
+                  }
+                ],
+                "frontendPorts": [
+                  {
+                    "name": "port80",
+                    "properties": {
+                      "port": 80
+                    }
+                  },
+                  {
+                    "name": "port443",
+                    "properties": {
+                      "port": 443
+                    }
+                  }
+                ],
+                "backendAddressPools": [
+                  {
+                    "name": "apimBackendPool",
+                    "properties": {
+                      "backendAddresses": [
+                        {
+                          "fqdn": "[parameters('apimGatewayUrl')]"
+                        }
+                      ]
+                    }
+                  }
+                ],
+                "backendHttpSettingsCollection": [
+                  {
+                    "name": "apimHttpSettings",
+                    "properties": {
+                      "port": 443,
+                      "protocol": "Https",
+                      "cookieBasedAffinity": "Disabled",
+                      "pickHostNameFromBackendAddress": true,
+                      "requestTimeout": 30,
+                      "probe": {
+                        "id": "[resourceId('Microsoft.Network/applicationGateways/probes', format('{0}-{1}', parameters('appGwName'), parameters('resourceToken')), 'apimHealthProbe')]"
+                      }
+                    }
+                  }
+                ],
+                "httpListeners": [
+                  {
+                    "name": "appGwHttpListener",
+                    "properties": {
+                      "frontendIPConfiguration": {
+                        "id": "[resourceId('Microsoft.Network/applicationGateways/frontendIPConfigurations', format('{0}-{1}', parameters('appGwName'), parameters('resourceToken')), 'appGwFrontendIP')]"
+                      },
+                      "frontendPort": {
+                        "id": "[resourceId('Microsoft.Network/applicationGateways/frontendPorts', format('{0}-{1}', parameters('appGwName'), parameters('resourceToken')), 'port80')]"
+                      },
+                      "protocol": "Http"
+                    }
+                  }
+                ],
+                "requestRoutingRules": [
+                  {
+                    "name": "apimRoutingRule",
+                    "properties": {
+                      "ruleType": "Basic",
+                      "priority": 100,
+                      "httpListener": {
+                        "id": "[resourceId('Microsoft.Network/applicationGateways/httpListeners', format('{0}-{1}', parameters('appGwName'), parameters('resourceToken')), 'appGwHttpListener')]"
+                      },
+                      "backendAddressPool": {
+                        "id": "[resourceId('Microsoft.Network/applicationGateways/backendAddressPools', format('{0}-{1}', parameters('appGwName'), parameters('resourceToken')), 'apimBackendPool')]"
+                      },
+                      "backendHttpSettings": {
+                        "id": "[resourceId('Microsoft.Network/applicationGateways/backendHttpSettingsCollection', format('{0}-{1}', parameters('appGwName'), parameters('resourceToken')), 'apimHttpSettings')]"
+                      }
+                    }
+                  }
+                ],
+                "probes": [
+                  {
+                    "name": "apimHealthProbe",
+                    "properties": {
+                      "protocol": "Https",
+                      "path": "/status-0123456789abcdef",
+                      "interval": 30,
+                      "timeout": 30,
+                      "unhealthyThreshold": 3,
+                      "pickHostNameFromBackendHttpSettings": true,
+                      "minServers": 0,
+                      "match": {
+                        "statusCodes": [
+                          "200-399"
+                        ]
+                      }
+                    }
+                  }
+                ],
+                "webApplicationFirewallConfiguration": {
+                  "enabled": true,
+                  "firewallMode": "Prevention",
+                  "ruleSetType": "OWASP",
+                  "ruleSetVersion": "3.2"
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/publicIPAddresses', format('{0}-pip-{1}', parameters('appGwName'), parameters('resourceToken')))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "appGwName": {
+              "type": "string",
+              "value": "[format('{0}-{1}', parameters('appGwName'), parameters('resourceToken'))]"
+            },
+            "appGwId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Network/applicationGateways', format('{0}-{1}', parameters('appGwName'), parameters('resourceToken')))]"
+            },
+            "publicIpAddress": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Network/publicIPAddresses', format('{0}-pip-{1}', parameters('appGwName'), parameters('resourceToken'))), '2022-07-01').ipAddress]"
+            },
+            "publicFqdn": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Network/publicIPAddresses', format('{0}-pip-{1}', parameters('appGwName'), parameters('resourceToken'))), '2022-07-01').dnsSettings.fqdn]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Resources/deployments', 'apim-deployment')]",
+        "[resourceId('Microsoft.Resources/deployments', 'vnet-deployment')]"
+      ]
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2022-09-01",
+      "name": "workspace-deployment",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "apimServiceName": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'apim-deployment'), '2022-09-01').outputs.apimName.value]"
+          },
+          "workspaceName": {
+            "value": "workspace-primary"
+          },
+          "workspaceDisplayName": {
+            "value": "Primary Workspace"
+          },
+          "workspaceDescription": {
+            "value": "Main workspace with dedicated VNet-injected workspace gateway"
+          },
+          "gatewayName": {
+            "value": "gateway-workspace-primary"
+          },
+          "workspaceSubnetId": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'vnet-deployment'), '2022-09-01').outputs.workspaceSubnetIds.value[0]]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.36.1.42791",
+              "templateHash": "7480604300387324594"
+            }
+          },
+          "parameters": {
+            "apimServiceName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the existing APIM service"
+              }
+            },
+            "workspaceName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the workspace to create"
+              }
+            },
+            "workspaceDisplayName": {
+              "type": "string",
+              "metadata": {
+                "description": "Display name for the workspace"
+              }
+            },
+            "workspaceDescription": {
+              "type": "string",
+              "defaultValue": "APIM workspace with dedicated VNet-injected workspace gateway",
+              "metadata": {
+                "description": "Description of the workspace"
+              }
+            },
+            "gatewayName": {
+              "type": "string",
+              "metadata": {
+                "description": "Name of the workspace gateway"
+              }
+            },
+            "location": {
+              "type": "string",
+              "defaultValue": "[resourceGroup().location]",
+              "metadata": {
+                "description": "Location for the gateway resource"
+              }
+            },
+            "workspaceSubnetId": {
+              "type": "string",
+              "metadata": {
+                "description": "Subnet ID for VNet injection of the workspace gateway"
+              }
+            }
+          },
+          "resources": [
+            {
+              "type": "Microsoft.ApiManagement/service/workspaces",
+              "apiVersion": "2024-05-01",
+              "name": "[format('{0}/{1}', parameters('apimServiceName'), parameters('workspaceName'))]",
+              "properties": {
+                "displayName": "[parameters('workspaceDisplayName')]",
+                "description": "[parameters('workspaceDescription')]"
+              }
+            },
+            {
+              "type": "Microsoft.ApiManagement/gateways",
+              "apiVersion": "2024-06-01-preview",
+              "name": "[parameters('gatewayName')]",
+              "location": "[parameters('location')]",
+              "sku": {
+                "name": "WorkspaceGatewayPremium",
+                "capacity": 1
+              },
+              "properties": {
+                "virtualNetworkType": "Internal",
+                "backend": {
+                  "subnet": {
+                    "id": "[parameters('workspaceSubnetId')]"
+                  }
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.ApiManagement/service/workspaces', parameters('apimServiceName'), parameters('workspaceName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.ApiManagement/gateways/configConnections",
+              "apiVersion": "2024-06-01-preview",
+              "name": "[format('{0}/{1}', parameters('gatewayName'), 'default')]",
+              "properties": {
+                "sourceId": "[resourceId('Microsoft.ApiManagement/service/workspaces', parameters('apimServiceName'), parameters('workspaceName'))]",
+                "hostnames": [
+                  "[format('{0}.azure-api.net', parameters('apimServiceName'))]"
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.ApiManagement/service/workspaces', parameters('apimServiceName'), parameters('workspaceName'))]",
+                "[resourceId('Microsoft.ApiManagement/gateways', parameters('gatewayName'))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "workspaceId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.ApiManagement/service/workspaces', parameters('apimServiceName'), parameters('workspaceName'))]"
+            },
+            "workspaceName": {
+              "type": "string",
+              "value": "[parameters('workspaceName')]"
+            },
+            "gatewayId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.ApiManagement/gateways', parameters('gatewayName'))]"
+            },
+            "gatewayName": {
+              "type": "string",
+              "value": "[parameters('gatewayName')]"
+            },
+            "configConnectionId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.ApiManagement/gateways/configConnections', parameters('gatewayName'), 'default')]"
+            },
+            "connectionInstructions": {
+              "type": "string",
+              "value": "[format('Configuration connection created automatically: workspace \"{0}\" connected to gateway \"{1}\"', parameters('workspaceName'), parameters('gatewayName'))]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Resources/deployments', 'apim-deployment')]",
+        "[resourceId('Microsoft.Resources/deployments', 'vnet-deployment')]"
+      ]
+    }
+  ],
+  "outputs": {
+    "apimServiceName": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'apim-deployment'), '2022-09-01').outputs.apimName.value]"
+    },
+    "vnetName": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'vnet-deployment'), '2022-09-01').outputs.vnetName.value]"
+    },
+    "appGatewayName": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'appgw-deployment'), '2022-09-01').outputs.appGwName.value]"
+    },
+    "publicIpAddress": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'appgw-deployment'), '2022-09-01').outputs.publicIpAddress.value]"
+    },
+    "publicFqdn": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'appgw-deployment'), '2022-09-01').outputs.publicFqdn.value]"
+    },
+    "workspaceName": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'workspace-deployment'), '2022-09-01').outputs.workspaceName.value]"
+    },
+    "workspaceGatewayName": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'workspace-deployment'), '2022-09-01').outputs.gatewayName.value]"
+    },
+    "connectionInstructions": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'workspace-deployment'), '2022-09-01').outputs.connectionInstructions.value]"
+    }
+  }
+}
